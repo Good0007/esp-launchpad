@@ -14,6 +14,28 @@ class ModernESPLaunchpad {
         this.chip = "default";
         this.chipDesc = "default";
         
+        // 应用配置列表 - 可从外部配置文件加载
+        this.availableApplications = [
+            {
+                name: "小智amourk08v1.6.2-增量包",
+                url: "https://music.chenweikang.top/release_1.6.2/xiaozhi_xiaozhi_0x100000_1.6.2.bin",
+                flashAddress: "0x100000",
+                value: "xiaozhi-increment",
+                description: "适用于已安装基础版本用户的增量更新包",
+                version: "1.6.2",
+                type: "increment"
+            },
+            {
+                name: "小智amourk08v1.6.2-全量包", 
+                url: "https://music.chenweikang.top/release_1.6.2/xiaozhi_xiaozhi_0x100000_1.6.2.bin",
+                flashAddress: "0x0",
+                value: "xiaozhi-full",
+                description: "完整版本3合一固件，包含所有功能，适用于全新安装",
+                version: "1.6.2",
+                type: "full"
+            }
+        ];
+        
         // ESP 库直接可用
         this.ESPLoader = ESPLoader;
         this.Transport = Transport;
@@ -107,6 +129,14 @@ class ModernESPLaunchpad {
         this.progressPercentage = document.getElementById('progressPercentage');
         this.progressBar = document.getElementById('progressBar');
         this.progressDetails = document.getElementById('progressDetails');
+        
+        // 添加进度元素调试信息
+        console.log('进度元素初始化状态:');
+        console.log('progressCard:', !!this.progressCard);
+        console.log('progressLabel:', !!this.progressLabel);
+        console.log('progressPercentage:', !!this.progressPercentage);
+        console.log('progressBar:', !!this.progressBar);
+        console.log('progressDetails:', !!this.progressDetails);
 
         // Console elements
         this.consoleOutput = document.getElementById('consoleOutput');
@@ -173,6 +203,20 @@ class ModernESPLaunchpad {
             this.resetDeviceBtn.addEventListener('click', () => this.resetDevice());
         }
 
+        // Success modal reset button
+        const resetAfterFlashBtn = document.getElementById('resetAfterFlashBtn');
+        if (resetAfterFlashBtn) {
+            resetAfterFlashBtn.addEventListener('click', () => {
+                // 关闭模态框
+                const successModal = bootstrap.Modal.getInstance(document.getElementById('successModal'));
+                if (successModal) {
+                    successModal.hide();
+                }
+                // 执行重置
+                this.resetDevice();
+            });
+        }
+
         // Chip type events
         document.querySelectorAll('input[name="chipType"]').forEach(radio => {
             radio.addEventListener('change', () => this.handleChipTypeChange());
@@ -228,12 +272,132 @@ class ModernESPLaunchpad {
     initializeConsole() {
         this.addConsoleMessage('ESP Launchpad 控制台已就绪', 'info');
         this.addConsoleMessage('请连接您的 ESP 设备到 USB 串口', 'info');
+        
+        // 调试控制台元素状态
+        if (this.consoleOutput) {
+            console.log('控制台元素状态:');
+            console.log('- 元素存在:', !!this.consoleOutput);
+            console.log('- 滚动高度:', this.consoleOutput.scrollHeight);
+            console.log('- 客户端高度:', this.consoleOutput.clientHeight);
+            console.log('- 当前滚动位置:', this.consoleOutput.scrollTop);
+            console.log('- 溢出样式:', window.getComputedStyle(this.consoleOutput).overflowY);
+        }
     }
 
     async loadConfiguration() {
         // Load default configuration
         this.addConsoleMessage('加载配置中...', 'info');
+        
+        // 尝试从外部源加载应用配置
+        await this.loadApplicationsConfig();
+        
+        // 初始化应用列表信息
+        this.initializeApplications();
+        
         this.updateFlashButtonState();
+    }
+
+    async loadApplicationsConfig() {
+        try {
+            // 可以从配置文件或API加载应用列表
+            // 这里演示如何支持外部配置
+            const configUrl = './config/applications.json';
+            
+            // 尝试获取外部配置（如果文件不存在，使用默认配置）
+            try {
+                const response = await fetch(configUrl);
+                if (response.ok) {
+                    const externalConfig = await response.json();
+                    if (externalConfig.applications && Array.isArray(externalConfig.applications)) {
+                        this.availableApplications = externalConfig.applications;
+                        this.addConsoleMessage('已从外部配置文件加载应用列表', 'info');
+                        return;
+                    }
+                }
+            } catch (fetchError) {
+                console.log('外部配置文件不存在，使用默认配置:', fetchError.message);
+            }
+            
+            // 使用默认配置（已在构造函数中定义）
+            this.addConsoleMessage('使用默认应用配置', 'info');
+            
+        } catch (error) {
+            console.error('加载应用配置时出错:', error);
+            this.addConsoleMessage('应用配置加载失败，使用默认配置', 'warning');
+        }
+    }
+
+    initializeApplications() {
+        // 动态生成应用选项
+        if (this.applicationSelect) {
+            // 清空现有选项（除了默认的占位符选项）
+            this.applicationSelect.innerHTML = '<option value="">请选择应用...</option>';
+            
+            // 添加所有应用选项
+            this.availableApplications.forEach(app => {
+                const option = document.createElement('option');
+                option.value = app.value;
+                option.textContent = app.name;
+                option.dataset.url = app.url;
+                option.dataset.address = app.flashAddress;
+                option.dataset.version = app.version || '';
+                option.dataset.type = app.type || '';
+                if (app.description) {
+                    option.title = app.description; // 添加鼠标悬停提示
+                }
+                this.applicationSelect.appendChild(option);
+            });
+            
+            this.addConsoleMessage(`已加载 ${this.availableApplications.length} 个可用应用`, 'info');
+        } else {
+            console.error('applicationSelect 元素未找到');
+            this.addConsoleMessage('应用选择器初始化失败', 'error');
+        }
+    }
+
+    // 添加新应用到列表
+    addApplication(appConfig) {
+        // 验证应用配置
+        const requiredFields = ['name', 'url', 'flashAddress', 'value'];
+        for (const field of requiredFields) {
+            if (!appConfig[field]) {
+                throw new Error(`应用配置缺少必需字段: ${field}`);
+            }
+        }
+
+        // 检查是否已存在相同的应用
+        const existingApp = this.availableApplications.find(app => app.value === appConfig.value);
+        if (existingApp) {
+            throw new Error(`应用 "${appConfig.value}" 已存在`);
+        }
+
+        // 添加到应用列表
+        this.availableApplications.push(appConfig);
+        
+        // 刷新UI
+        this.initializeApplications();
+        
+        this.addConsoleMessage(`已添加新应用: ${appConfig.name}`, 'success');
+    }
+
+    // 移除应用
+    removeApplication(appValue) {
+        const index = this.availableApplications.findIndex(app => app.value === appValue);
+        if (index === -1) {
+            throw new Error(`应用 "${appValue}" 不存在`);
+        }
+
+        const removedApp = this.availableApplications.splice(index, 1)[0];
+        
+        // 刷新UI
+        this.initializeApplications();
+        
+        this.addConsoleMessage(`已移除应用: ${removedApp.name}`, 'info');
+    }
+
+    // 获取应用信息
+    getApplicationInfo(appValue) {
+        return this.availableApplications.find(app => app.value === appValue);
     }
 
     // 核心功能：固件模式切换
@@ -334,11 +498,14 @@ class ModernESPLaunchpad {
             file: file,
             name: file.name,
             size: file.size,
-            address: 0x10000 // 默认应用程序地址
+            address: '100000' // 默认应用程序地址，使用字符串格式
         });
 
         this.updateSingleFileDisplay();
         this.addConsoleMessage(`已选择文件: ${file.name} (${this.formatFileSize(file.size)})`, 'success');
+        
+        // 更新Flash按钮状态
+        this.updateFlashButtonState();
     }
 
     updateSingleFileDisplay() {
@@ -368,7 +535,7 @@ class ModernESPLaunchpad {
             // 更新Flash地址输入框
             const flashAddressInput = document.getElementById('flashAddressInput');
             if (flashAddressInput) {
-                flashAddressInput.value = file.address.toString(16);
+                flashAddressInput.value = file.address; // 直接使用字符串地址
             }
         } else {
             fileInfoSection.style.display = 'none';
@@ -410,13 +577,16 @@ class ModernESPLaunchpad {
 
     updateFlashAddress(addressStr) {
         if (this.selectedFiles.length > 0) {
-            // 移除 0x 前缀（如果存在）并转换为数字
+            // 移除 0x 前缀（如果存在）并验证格式
             const cleanAddress = addressStr.replace(/^0x/i, '');
-            const address = parseInt(cleanAddress, 16);
             
-            if (!isNaN(address)) {
-                this.selectedFiles[0].address = address;
-                this.addConsoleMessage(`Flash地址已更新: 0x${address.toString(16).toUpperCase()}`, 'info');
+            if (/^[0-9a-fA-F]+$/.test(cleanAddress) && cleanAddress.length > 0) {
+                this.selectedFiles[0].address = cleanAddress; // 保存为字符串格式
+                const addressNum = parseInt(cleanAddress, 16);
+                this.addConsoleMessage(`Flash地址已更新: 0x${addressNum.toString(16).toUpperCase()}`, 'info');
+                this.updateFlashButtonState(); // 更新按钮状态
+            } else {
+                this.addConsoleMessage('地址格式无效，请输入有效的十六进制地址', 'error');
             }
         }
     }
@@ -601,6 +771,15 @@ class ModernESPLaunchpad {
             const allValid = this.selectedFiles.every(file => this.validateAddress(file.address));
             const isConnected = this.isConnected;
             
+            // 添加调试信息
+            console.log('DIY模式按钮状态检查:', {
+                hasFiles,
+                allValid,
+                isConnected,
+                filesCount: this.selectedFiles.length,
+                addresses: this.selectedFiles.map(f => f.address)
+            });
+            
             this.flashButton.disabled = !hasFiles || !allValid || !isConnected;
             
             if (!isConnected) {
@@ -657,76 +836,158 @@ class ModernESPLaunchpad {
     }
 
     async connect() {
+        const maxRetries = 2; // 最多重试2次
+        let lastError = null;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                this.addConsoleMessage(`正在连接设备... (尝试 ${attempt}/${maxRetries})`, 'info');
+                
+                if (!this.ESPLoader) {
+                    throw new Error('ESP库未加载，无法连接设备');
+                }
+
+                // 尝试 WebSerial 连接
+                if ('serial' in navigator) {
+                    this.addConsoleMessage('使用 WebSerial API 连接...', 'info');
+                    if (!this.device) { // 只在第一次尝试时请求设备
+                        this.device = await navigator.serial.requestPort({
+                            filters: this.usbPortFilters
+                        });
+                    }
+                    this.transport = new this.Transport(this.device, true);
+                }
+                // 备选 WebUSB 连接
+                else if ('usb' in navigator) {
+                    this.addConsoleMessage('使用 WebUSB API 连接...', 'info');
+                    if (!this.device) { // 只在第一次尝试时请求设备
+                        this.device = await navigator.usb.requestDevice({
+                            filters: this.usbPortFilters.map(filter => ({
+                                vendorId: filter.usbVendorId,
+                                productId: filter.usbProductId
+                            }))
+                        });
+                    }
+                    this.transport = new this.Transport(this.device, false);
+                } else {
+                    throw new Error('浏览器不支持设备连接');
+                }
+
+                await this.performConnection();
+                return; // 连接成功，退出重试循环
+                
+            } catch (error) {
+                lastError = error;
+                console.warn(`连接尝试 ${attempt} 失败:`, error);
+                
+                if (error.name === 'NotFoundError') {
+                    // 用户取消选择设备，不重试
+                    throw error;
+                }
+                
+                if (attempt < maxRetries) {
+                    this.addConsoleMessage(`连接失败，${2}秒后重试...`, 'warning');
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    
+                    // 清理之前的连接尝试
+                    if (this.transport) {
+                        try {
+                            await this.transport.disconnect();
+                        } catch (e) {
+                            console.warn('清理传输连接时出错:', e);
+                        }
+                        this.transport = null;
+                    }
+                } else {
+                    // 所有尝试都失败了
+                    throw lastError;
+                }
+            }
+        }
+    }
+    
+    async performConnection() {
         try {
-            this.addConsoleMessage('正在连接设备...', 'info');
-            
-            if (!this.ESPLoader) {
-                throw new Error('ESP库未加载，无法连接设备');
-            }
-
-            // 尝试 WebSerial 连接
-            if ('serial' in navigator) {
-                this.addConsoleMessage('使用 WebSerial API 连接...', 'info');
-                this.device = await navigator.serial.requestPort({
-                    filters: this.usbPortFilters
-                });
-                this.transport = new this.Transport(this.device, true);
-            }
-            // 备选 WebUSB 连接
-            else if ('usb' in navigator) {
-                this.addConsoleMessage('使用 WebUSB API 连接...', 'info');
-                this.device = await navigator.usb.requestDevice({
-                    filters: this.usbPortFilters.map(filter => ({
-                        vendorId: filter.usbVendorId,
-                        productId: filter.usbProductId
-                    }))
-                });
-                this.transport = new this.Transport(this.device, false);
-            } else {
-                throw new Error('浏览器不支持设备连接');
-            }
-
             this.addConsoleMessage('创建 ESP 加载器...', 'info');
+            
+            // 验证波特率设置
+            const flashBaudrate = parseInt(this.flashBaudrateSelect?.value || '460800');
+            this.addConsoleMessage(`使用波特率: ${flashBaudrate}`, 'info');
+            
             this.esploader = new this.ESPLoader({
                 transport: this.transport,
-                baudrate: parseInt(this.flashBaudrateSelect.value),
+                baudrate: flashBaudrate,
                 romBaudrate: 115200,
                 enableTracing: false
             });
 
             this.addConsoleMessage('正在连接并检测芯片...', 'info');
+            
+            // 执行连接和芯片检测
             await this.esploader.main();
             
-            // 获取芯片信息
-            this.chip = await this.esploader.chip.getChipDescription();
-            this.chipDesc = await this.esploader.chip.getChipFeatures();
+            // 验证连接状态
+            if (!this.esploader.chip) {
+                throw new Error('芯片检测失败 - 未检测到有效的ESP芯片');
+            }
+            
+            this.addConsoleMessage(`芯片类型: ${this.esploader.chip.constructor.name}`, 'info');
+            
+            // 获取芯片信息 - 添加错误处理
+            try {
+                this.chip = await this.esploader.chip.getChipDescription();
+                this.addConsoleMessage(`检测到芯片: ${this.chip}`, 'success');
+            } catch (e) {
+                console.warn('无法获取芯片描述:', e);
+                this.chip = this.esploader.chip.CHIP_NAME || 'ESP32'; // 使用备用名称
+                this.addConsoleMessage(`使用默认芯片名称: ${this.chip}`, 'warning');
+            }
+            
+            try {
+                this.chipDesc = await this.esploader.chip.getChipFeatures();
+                this.addConsoleMessage(`芯片特性: ${this.chipDesc}`, 'info');
+            } catch (e) {
+                console.warn('无法获取芯片特性:', e);
+                this.chipDesc = '未知特性';
+                this.addConsoleMessage('无法获取芯片特性', 'warning');
+            }
             
             this.isConnected = true;
             this.updateConnectionStatus();
             this.addConsoleMessage(`设备连接成功: ${this.chip}`, 'success');
-            this.addConsoleMessage(`芯片特性: ${this.chipDesc}`, 'info');
             
             // 获取 MAC 地址
             try {
-                const macAddr = await this.esploader.chip.readMac();
-                const macStr = macAddr.map(b => b.toString(16).padStart(2, '0')).join(':');
-                this.addConsoleMessage(`MAC 地址: ${macStr}`, 'info');
-                this.macAddressMini.textContent = macStr.substring(0, 8) + '...';
+                // 检查芯片是否支持 MAC 地址读取
+                if (this.esploader.chip && typeof this.esploader.chip.readMac === 'function') {
+                    const macAddr = await this.esploader.chip.readMac();
+                    if (macAddr && Array.isArray(macAddr) && macAddr.length >= 6) {
+                        const macStr = macAddr.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(':');
+                        this.addConsoleMessage(`MAC 地址: ${macStr}`, 'info');
+                        if (this.macAddressMini) {
+                            this.macAddressMini.textContent = macStr.substring(0, 8) + '...';
+                        }
+                    } else {
+                        this.addConsoleMessage('MAC 地址格式无效', 'warning');
+                    }
+                } else {
+                    this.addConsoleMessage('此芯片不支持 MAC 地址读取', 'info');
+                }
             } catch (e) {
-                console.warn('无法读取 MAC 地址:', e);
-                this.addConsoleMessage('无法读取 MAC 地址', 'warning');
+                console.warn('读取 MAC 地址时出错:', e);
+                this.addConsoleMessage(`无法读取 MAC 地址: ${e.message}`, 'warning');
+                if (this.macAddressMini) {
+                    this.macAddressMini.textContent = '未知';
+                }
             }
-
+            
         } catch (error) {
             this.addConsoleMessage(`连接失败: ${error.message}`, 'error');
             console.error('Connection error:', error);
             this.isConnected = false;
             this.updateConnectionStatus();
             
-            // 如果是用户取消，不显示错误
-            if (error.name === 'NotFoundError') {
-                this.addConsoleMessage('用户取消了设备选择', 'info');
-            }
+            throw error; // 重新抛出错误供重试机制处理
         }
     }
 
@@ -734,24 +995,54 @@ class ModernESPLaunchpad {
         try {
             this.addConsoleMessage('正在断开连接...', 'info');
             
+            // 尝试重置设备（可选，如果失败也继续断开连接）
+            if (this.esploader && typeof this.esploader.hardReset === 'function') {
+                try {
+                    await this.esploader.hardReset();
+                    this.addConsoleMessage('设备已重置', 'info');
+                } catch (resetError) {
+                    console.warn('重置设备时出错（将继续断开连接）:', resetError);
+                    this.addConsoleMessage('设备重置失败，但将继续断开连接', 'warning');
+                }
+            }
+            
+            // 清理 esploader
             if (this.esploader) {
-                await this.esploader.hardReset();
                 this.esploader = null;
             }
             
-            if (this.transport) {
-                await this.transport.disconnect();
-                this.transport = null;
+            // 断开传输连接
+            if (this.transport && typeof this.transport.disconnect === 'function') {
+                try {
+                    await this.transport.disconnect();
+                    this.addConsoleMessage('传输连接已断开', 'info');
+                } catch (transportError) {
+                    console.warn('断开传输连接时出错:', transportError);
+                    this.addConsoleMessage('传输连接断开时出现警告', 'warning');
+                }
             }
             
+            // 清理所有连接相关的引用
+            this.transport = null;
+            this.device = null;
+            this.isConnected = false;
+            
+            // 更新UI状态
+            this.updateConnectionStatus();
+            this.addConsoleMessage('设备已断开连接', 'success');
+            
+        } catch (error) {
+            // 即使出现错误，也要确保状态正确更新
+            console.error('Disconnect error:', error);
+            this.addConsoleMessage(`断开连接时出错: ${error.message}`, 'error');
+            
+            // 强制清理所有状态
+            this.esploader = null;
+            this.transport = null;
             this.device = null;
             this.isConnected = false;
             this.updateConnectionStatus();
-            this.addConsoleMessage('设备已断开连接', 'info');
-            
-        } catch (error) {
-            this.addConsoleMessage(`断开连接时出错: ${error.message}`, 'error');
-            console.error('Disconnect error:', error);
+            this.addConsoleMessage('已强制断开连接', 'warning');
         }
     }
 
@@ -800,7 +1091,34 @@ class ModernESPLaunchpad {
     }
 
     handleApplicationChange() {
-        this.addConsoleMessage('应用选择功能开发中...', 'info');
+        const selectedOption = this.applicationSelect.selectedOptions[0];
+        const appInfoSection = document.getElementById('appInfoSection');
+        const appName = document.getElementById('appName');
+        const appAddress = document.getElementById('appAddress');
+        
+        if (selectedOption && selectedOption.value) {
+            const name = selectedOption.textContent;
+            const url = selectedOption.dataset.url;
+            const address = selectedOption.dataset.address;
+            
+            // 显示应用信息
+            if (appInfoSection && appName && appAddress) {
+                appName.textContent = name;
+                appAddress.textContent = address;
+                appInfoSection.style.display = 'block';
+            }
+            
+            this.addConsoleMessage(`已选择应用: ${name}`, 'info');
+            this.addConsoleMessage(`Flash地址: ${address}`, 'info');
+            this.addConsoleMessage(`固件URL: ${url}`, 'info');
+        } else {
+            // 隐藏应用信息
+            if (appInfoSection) {
+                appInfoSection.style.display = 'none';
+            }
+        }
+        
+        this.updateFlashButtonState();
     }
 
     handleChipTypeChange() {
@@ -810,18 +1128,32 @@ class ModernESPLaunchpad {
     // 真正的烧录功能
     async startFlashing() {
         if (!this.isConnected || this.isFlashing) {
+            this.addConsoleMessage(`烧录被阻止: 连接状态=${this.isConnected}, 烧录状态=${this.isFlashing}`, 'warning');
             return;
         }
 
         try {
             this.isFlashing = true;
-            this.progressCard.style.display = 'block';
+            
+            // 显示进度卡片
+            if (this.progressCard) {
+                this.progressCard.style.display = 'block';
+                this.progressCard.classList.remove('d-none');
+                console.log('进度卡片已显示');
+            } else {
+                console.error('progressCard 元素未找到');
+            }
+            
             this.flashButton.disabled = true;
+            
+            // 强制刷新控制台滚动
+            this.forceConsoleRefresh();
             
             this.addConsoleMessage('开始烧录固件...', 'info');
             this.updateProgress('准备烧录...', 0);
 
             const isQuickStart = this.quickStartMode.checked;
+            console.log('烧录模式:', isQuickStart ? 'QuickStart' : 'DIY');
             
             if (isQuickStart) {
                 await this.flashQuickStartMode();
@@ -829,7 +1161,40 @@ class ModernESPLaunchpad {
                 await this.flashCustomMode();
             }
 
-            this.addConsoleMessage('固件烧录完成！', 'success');
+            this.addConsoleMessage('固件烧录完成！正在重置设备...', 'success');
+            this.updateProgress('重置设备中...', 95);
+            
+            // 烧录完成后自动重置设备，让其退出下载模式
+            try {
+                if (this.esploader && this.esploader.chip) {
+                    // 执行软重置让设备退出下载模式（如果支持）
+                    if (typeof this.esploader.chip.softReset === 'function') {
+                        try {
+                            await this.esploader.chip.softReset();
+                            await new Promise(resolve => setTimeout(resolve, 100));
+                            this.addConsoleMessage('软重置完成', 'info');
+                        } catch (softResetError) {
+                            console.warn('软重置失败:', softResetError);
+                            this.addConsoleMessage('软重置失败，将尝试硬重置', 'warning');
+                        }
+                    }
+                    
+                    // 执行硬重置确保设备完全重启
+                    if (typeof this.esploader.hardReset === 'function') {
+                        await this.esploader.hardReset();
+                        this.addConsoleMessage('设备已重置，正在启动新固件...', 'success');
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    } else {
+                        throw new Error('hardReset 方法不可用');
+                    }
+                } else {
+                    this.addConsoleMessage('ESP加载器不可用，跳过自动重置', 'warning');
+                }
+            } catch (resetError) {
+                console.warn('自动重置失败:', resetError);
+                this.addConsoleMessage('自动重置失败，请手动重置设备', 'warning');
+            }
+            
             this.updateProgress('烧录完成', 100);
             
             // 显示成功模态框
@@ -874,13 +1239,6 @@ class ModernESPLaunchpad {
         const totalSize = sortedFiles.reduce((sum, file) => sum + (file.file?.size || 0), 0);
         let processedSize = 0;
 
-        // 如果选择了擦除所有闪存
-        if (this.eraseAllCheckbox.checked) {
-            this.addConsoleMessage('擦除闪存...', 'info');
-            this.updateProgress('擦除闪存...', 0);
-            await this.esploader.eraseFlash();
-        }
-
         // 逐个烧录文件
         for (let i = 0; i < sortedFiles.length; i++) {
             const fileInfo = sortedFiles[i];
@@ -892,7 +1250,15 @@ class ModernESPLaunchpad {
             this.addConsoleMessage(`烧录 ${fileInfo.name} 到地址 0x${address.toString(16)}...`, 'info');
             this.updateProgress(`烧录 ${fileInfo.name}...`, progressBase);
 
-            const fileData = await this.readFileAsArrayBuffer(fileInfo.file);
+            const fileData = await this.readFileAsBinaryString(fileInfo.file);
+            
+            // 调试：检查数据格式
+            console.log('文件数据类型:', typeof fileData, '长度:', fileData.length);
+            console.log('数据前10字符:', fileData.substring(0, 10).split('').map(c => c.charCodeAt(0).toString(16)).join(' '));
+            
+            this.addConsoleMessage(`开始写入 ${fileInfo.name} (${this.formatFileSize(fileInfo.file.size)})...`, 'info');
+            
+            let lastProgressReport = 0; // 用于控制进度报告频率
             
             await this.esploader.writeFlash({
                 fileArray: [{
@@ -901,10 +1267,20 @@ class ModernESPLaunchpad {
                 }],
                 flashSize: 'keep',
                 eraseAll: false,
-                compress: this.compressCheckbox.checked,
+                compress: this.compressCheckbox ? this.compressCheckbox.checked : true, // 默认启用压缩
                 reportProgress: (fileIndex, written, total) => {
                     const fileProgress = (written / total) * (fileInfo.file.size / totalSize) * 90;
-                    this.updateProgress(`烧录 ${fileInfo.name}...`, progressBase + fileProgress);
+                    const currentProgress = progressBase + fileProgress;
+                    const progressPercent = Math.round((written/total)*100);
+                    
+                    // 添加调试信息（减少频率）
+                    if (progressPercent % 10 === 0 && progressPercent !== lastProgressReport) {
+                        console.log(`烧录进度: ${written}/${total} bytes, 当前进度: ${currentProgress.toFixed(1)}%`);
+                        this.addConsoleMessage(`写入进度: ${this.formatFileSize(written)}/${this.formatFileSize(total)} (${progressPercent}%)`, 'info');
+                        lastProgressReport = progressPercent;
+                    }
+                    
+                    this.updateProgress(`烧录 ${fileInfo.name}... (${progressPercent}%)`, currentProgress);
                 }
             });
 
@@ -912,41 +1288,184 @@ class ModernESPLaunchpad {
             this.addConsoleMessage(`✓ ${fileInfo.name} 烧录完成`, 'success');
         }
 
-        this.updateProgress('验证烧录结果...', 95);
-        await new Promise(resolve => setTimeout(resolve, 500)); // 短暂延迟
+        this.addConsoleMessage('所有文件烧录完成', 'success');
+        // 移除验证延迟，直接返回让上层处理重置
     }
 
     async flashQuickStartMode() {
-        const appValue = this.applicationSelect.value;
-        if (!appValue) {
+        const selectedOption = this.applicationSelect.selectedOptions[0];
+        if (!selectedOption || !selectedOption.value) {
             throw new Error('请选择要烧录的应用');
         }
 
-        // 这里应该根据选择的应用加载对应的固件文件
-        // 目前作为演示，显示相关信息
-        this.addConsoleMessage(`烧录应用: ${appValue}`, 'info');
-        this.updateProgress('下载固件文件...', 10);
+        const appName = selectedOption.textContent;
+        const appUrl = selectedOption.dataset.url;
+        const appAddress = selectedOption.dataset.address;
         
-        // 模拟下载和烧录过程
-        for (let i = 20; i <= 90; i += 10) {
-            await new Promise(resolve => setTimeout(resolve, 200));
-            this.updateProgress('烧录中...', i);
+        if (!appUrl || !appAddress) {
+            throw new Error('应用配置信息不完整');
+        }
+
+        this.addConsoleMessage(`开始烧录应用: ${appName}`, 'info');
+        this.addConsoleMessage(`从远程下载固件: ${appUrl}`, 'info');
+        
+        // 下载远程固件文件
+        this.updateProgress('正在下载固件...', 10);
+        const firmwareData = await this.downloadRemoteFirmware(appUrl);
+        
+        this.updateProgress('固件下载完成，开始烧录...', 30);
+        
+        // 解析Flash地址
+        const address = parseInt(appAddress.replace(/^0x/i, ''), 16);
+        this.addConsoleMessage(`烧录到地址: ${appAddress} (${address})`, 'info');
+        
+        // 执行烧录
+        await this.esploader.writeFlash({
+            fileArray: [{
+                data: firmwareData,
+                address: address
+            }],
+            flashSize: 'keep',
+            eraseAll: false,
+            compress: this.compressCheckbox ? this.compressCheckbox.checked : true,
+            reportProgress: (fileIndex, written, total) => {
+                const progress = 30 + (written / total) * 60; // 30% - 90%
+                const progressPercent = Math.round((written/total)*100);
+                this.updateProgress(`烧录中... (${progressPercent}%)`, progress);
+                
+                // 每10%报告一次进度
+                if (progressPercent % 10 === 0) {
+                    this.addConsoleMessage(`烧录进度: ${this.formatFileSize(written)}/${this.formatFileSize(total)} (${progressPercent}%)`, 'info');
+                }
+            }
+        });
+        
+        this.addConsoleMessage(`✓ ${appName} 烧录完成`, 'success');
+    }
+
+    async downloadRemoteFirmware(url) {
+        try {
+            this.addConsoleMessage('开始下载远程固件...', 'info');
+            
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`下载失败: ${response.status} ${response.statusText}`);
+            }
+            
+            // 获取文件大小（如果服务器提供）
+            const contentLength = response.headers.get('content-length');
+            const totalSize = contentLength ? parseInt(contentLength) : 0;
+            
+            if (totalSize > 0) {
+                this.addConsoleMessage(`固件大小: ${this.formatFileSize(totalSize)}`, 'info');
+            }
+            
+            // 使用流式下载以支持进度显示
+            const reader = response.body.getReader();
+            const chunks = [];
+            let receivedLength = 0;
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) break;
+                
+                chunks.push(value);
+                receivedLength += value.length;
+                
+                // 更新下载进度
+                if (totalSize > 0) {
+                    const progress = 10 + (receivedLength / totalSize) * 20; // 10% - 30%
+                    const percent = Math.round((receivedLength / totalSize) * 100);
+                    this.updateProgress(`下载固件... (${percent}%)`, progress);
+                    
+                    // 每25%报告一次
+                    if (percent % 25 === 0) {
+                        this.addConsoleMessage(`下载进度: ${this.formatFileSize(receivedLength)}/${this.formatFileSize(totalSize)} (${percent}%)`, 'info');
+                    }
+                } else {
+                    // 如果不知道总大小，只显示已下载的大小
+                    this.updateProgress(`下载固件... (${this.formatFileSize(receivedLength)})`, 15);
+                }
+            }
+            
+            // 合并所有chunks
+            const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+            const uint8Array = new Uint8Array(totalLength);
+            let position = 0;
+            
+            for (const chunk of chunks) {
+                uint8Array.set(chunk, position);
+                position += chunk.length;
+            }
+            
+            // 转换为二进制字符串（ESP库需要的格式）
+            let binaryString = '';
+            for (let i = 0; i < uint8Array.length; i++) {
+                binaryString += String.fromCharCode(uint8Array[i]);
+            }
+            
+            this.addConsoleMessage(`固件下载完成，大小: ${this.formatFileSize(binaryString.length)}`, 'success');
+            
+            // 调试信息
+            console.log('下载的固件数据类型:', typeof binaryString, '长度:', binaryString.length);
+            console.log('数据前10字符:', binaryString.substring(0, 10).split('').map(c => c.charCodeAt(0).toString(16)).join(' '));
+            
+            return binaryString;
+            
+        } catch (error) {
+            this.addConsoleMessage(`固件下载失败: ${error.message}`, 'error');
+            throw new Error(`无法下载固件: ${error.message}`);
         }
     }
 
-    async readFileAsArrayBuffer(file) {
+    async readFileAsBinaryString(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload = () => resolve(new Uint8Array(reader.result));
+            reader.onload = () => {
+                // ESP库期望二进制字符串格式，不是Uint8Array
+                resolve(reader.result);
+            };
             reader.onerror = () => reject(new Error('文件读取失败'));
-            reader.readAsArrayBuffer(file);
+            reader.readAsBinaryString(file); // 使用 readAsBinaryString 而不是 readAsArrayBuffer
         });
     }
 
     updateProgress(message, percentage) {
-        if (this.progressLabel) this.progressLabel.textContent = message;
-        if (this.progressPercentage) this.progressPercentage.textContent = `${Math.round(percentage)}%`;
-        if (this.progressBar) this.progressBar.style.width = `${percentage}%`;
+        // 添加调试信息
+        console.log(`更新进度: ${message} - ${percentage.toFixed(1)}%`);
+        
+        if (this.progressLabel) {
+            this.progressLabel.textContent = message;
+            console.log('进度标签已更新:', message);
+        } else {
+            console.warn('progressLabel 元素未找到');
+        }
+        
+        if (this.progressPercentage) {
+            this.progressPercentage.textContent = `${Math.round(percentage)}%`;
+            console.log('进度百分比已更新:', `${Math.round(percentage)}%`);
+        } else {
+            console.warn('progressPercentage 元素未找到');
+        }
+        
+        if (this.progressBar) {
+            this.progressBar.style.width = `${percentage}%`;
+            console.log('进度条已更新:', `${percentage}%`);
+        } else {
+            console.warn('progressBar 元素未找到');
+        }
+        
+        // 更新进度详情
+        if (this.progressDetails) {
+            this.progressDetails.innerHTML = `<small class="text-muted">${message}</small>`;
+            console.log('进度详情已更新:', message);
+        } else {
+            console.warn('progressDetails 元素未找到');
+        }
+        
+        // 确保控制台滚动到底部
+        this.scrollConsoleToBottom();
     }
 
     async eraseFlash() {
@@ -957,7 +1476,9 @@ class ModernESPLaunchpad {
 
         try {
             this.addConsoleMessage('正在擦除闪存...', 'info');
-            this.eraseFlashBtn.disabled = true;
+            if (this.eraseFlashBtn) {
+                this.eraseFlashBtn.disabled = true;
+            }
             
             await this.esploader.eraseFlash();
             this.addConsoleMessage('闪存擦除完成', 'success');
@@ -965,7 +1486,9 @@ class ModernESPLaunchpad {
         } catch (error) {
             this.addConsoleMessage(`擦除失败: ${error.message}`, 'error');
         } finally {
-            this.eraseFlashBtn.disabled = false;
+            if (this.eraseFlashBtn) {
+                this.eraseFlashBtn.disabled = false;
+            }
         }
     }
 
@@ -976,12 +1499,55 @@ class ModernESPLaunchpad {
         }
 
         try {
-            this.addConsoleMessage('正在重置设备...', 'info');
-            await this.esploader.hardReset();
-            this.addConsoleMessage('设备重置完成', 'success');
+            this.addConsoleMessage('正在重置设备，退出下载模式...', 'info');
+            
+            // 执行软重置，让设备退出下载模式
+            if (this.esploader && this.esploader.chip) {
+                // 先尝试软重置（如果支持）
+                if (typeof this.esploader.chip.softReset === 'function') {
+                    try {
+                        await this.esploader.chip.softReset();
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        this.addConsoleMessage('软重置完成', 'info');
+                    } catch (softResetError) {
+                        console.warn('软重置失败:', softResetError);
+                        this.addConsoleMessage('软重置失败，将尝试硬重置', 'warning');
+                    }
+                }
+                
+                // 然后执行硬重置确保设备完全重启
+                if (typeof this.esploader.hardReset === 'function') {
+                    await this.esploader.hardReset();
+                    this.addConsoleMessage('硬重置完成', 'info');
+                } else {
+                    throw new Error('hardReset 方法不可用');
+                }
+                
+                this.addConsoleMessage('设备已重置，正在进入正常运行模式...', 'success');
+                
+                // 给设备一些时间启动
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // 断开连接，因为设备已经退出下载模式
+                this.addConsoleMessage('设备已退出下载模式，断开连接...', 'info');
+                await this.disconnect();
+                
+            } else {
+                throw new Error('ESP加载器或芯片对象不可用');
+            }
             
         } catch (error) {
             this.addConsoleMessage(`重置失败: ${error.message}`, 'error');
+            console.error('Reset error:', error);
+            
+            // 即使重置失败，也尝试断开连接
+            try {
+                this.addConsoleMessage('尝试强制断开连接...', 'warning');
+                await this.disconnect();
+            } catch (disconnectError) {
+                console.warn('断开连接时出错:', disconnectError);
+                this.addConsoleMessage('强制断开连接也失败，请手动重新连接', 'error');
+            }
         }
     }
 
@@ -990,18 +1556,11 @@ class ModernESPLaunchpad {
             this.consoleOutput.innerHTML = '';
         }
         this.addConsoleMessage('控制台已清空', 'info');
+        // 确保滚动到底部
+        this.scrollConsoleToBottom();
     }
 
     // 实用工具函数
-    async readFileAsArrayBuffer(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(new Uint8Array(reader.result));
-            reader.onerror = () => reject(new Error('文件读取失败'));
-            reader.readAsArrayBuffer(file);
-        });
-    }
-
     async getImageData(fileURL) {
         return new Promise(resolve => {
             var xhr = new XMLHttpRequest();
@@ -1030,7 +1589,10 @@ class ModernESPLaunchpad {
 
     // Console methods
     addConsoleMessage(message, type = 'info') {
-        if (!this.consoleOutput) return;
+        if (!this.consoleOutput) {
+            console.warn('consoleOutput 元素未找到');
+            return;
+        }
         
         const timestamp = new Date().toLocaleTimeString();
         const typeClass = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : '';
@@ -1043,7 +1605,66 @@ class ModernESPLaunchpad {
         `;
         
         this.consoleOutput.appendChild(messageElement);
-        this.consoleOutput.scrollTop = this.consoleOutput.scrollHeight;
+        
+        // 确保滚动到底部 - 使用 setTimeout 确保DOM更新完成后再滚动
+        setTimeout(() => {
+            if (this.consoleOutput) {
+                this.consoleOutput.scrollTop = this.consoleOutput.scrollHeight;
+            }
+        }, 0);
+    }
+
+    // 强制滚动控制台到底部
+    scrollConsoleToBottom() {
+        if (this.consoleOutput) {
+            // 使用 requestAnimationFrame 确保在下一帧执行滚动
+            requestAnimationFrame(() => {
+                this.consoleOutput.scrollTop = this.consoleOutput.scrollHeight;
+            });
+        }
+    }
+
+    // 批量添加控制台消息（用于快速连续的消息）
+    addConsoleMessages(messages) {
+        if (!Array.isArray(messages) || !this.consoleOutput) return;
+        
+        const fragment = document.createDocumentFragment();
+        
+        messages.forEach(({ message, type = 'info' }) => {
+            const timestamp = new Date().toLocaleTimeString();
+            const typeClass = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : '';
+            
+            const messageElement = document.createElement('div');
+            messageElement.className = 'console-line';
+            messageElement.innerHTML = `
+                <span class="console-timestamp">[${timestamp}]</span>
+                <span class="console-text ${typeClass}">${message}</span>
+            `;
+            
+            fragment.appendChild(messageElement);
+        });
+        
+        this.consoleOutput.appendChild(fragment);
+        this.scrollConsoleToBottom();
+    }
+
+    // 强制刷新控制台滚动（用于解决滚动卡住的问题）
+    forceConsoleRefresh() {
+        if (this.consoleOutput) {
+            // 强制重新计算滚动高度
+            const currentScrollTop = this.consoleOutput.scrollTop;
+            this.consoleOutput.style.overflow = 'hidden';
+            
+            // 强制重绘
+            this.consoleOutput.offsetHeight; // 触发重排
+            
+            this.consoleOutput.style.overflow = 'auto';
+            
+            // 滚动到底部
+            setTimeout(() => {
+                this.consoleOutput.scrollTop = this.consoleOutput.scrollHeight;
+            }, 10);
+        }
     }
 }
 
