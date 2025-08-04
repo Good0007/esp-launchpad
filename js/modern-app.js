@@ -86,6 +86,8 @@ class ModernESPLaunchpad {
     }
 
     initializeElements() {
+        // 进度卡片元素（与连接提示卡片同位置切换）
+        this.progressCard = document.getElementById('progressCard');
         // Connection elements
         this.connectToggleBtn = document.getElementById('connectToggleBtn');
         this.statusIndicator = document.getElementById('statusIndicator');
@@ -975,7 +977,7 @@ class ModernESPLaunchpad {
                 }
             } catch (e) {
                 console.warn('读取 MAC 地址时出错:', e);
-                this.addConsoleMessage(`无法读取 MAC 地址: ${e.message}`, 'warning');
+                //this.addConsoleMessage(`无法读取 MAC 地址: ${e.message}`, 'warning');
                 if (this.macAddressMini) {
                     this.macAddressMini.textContent = '未知';
                 }
@@ -1127,6 +1129,12 @@ class ModernESPLaunchpad {
 
     // 真正的烧录功能
     async startFlashing() {
+        // 隐藏连接提示卡片，显示进度卡片
+        if (this.statusAlert) this.statusAlert.style.display = 'none';
+        if (this.progressCard) {
+            this.progressCard.style.display = 'block';
+            this.progressCard.classList.remove('d-none');
+        }
         if (!this.isConnected || this.isFlashing) {
             this.addConsoleMessage(`烧录被阻止: 连接状态=${this.isConnected}, 烧录状态=${this.isFlashing}`, 'warning');
             return;
@@ -1154,7 +1162,6 @@ class ModernESPLaunchpad {
 
             const isQuickStart = this.quickStartMode.checked;
             console.log('烧录模式:', isQuickStart ? 'QuickStart' : 'DIY');
-            
             if (isQuickStart) {
                 await this.flashQuickStartMode();
             } else {
@@ -1167,7 +1174,6 @@ class ModernESPLaunchpad {
             // 烧录完成后自动重置设备，让其退出下载模式
             try {
                 if (this.esploader && this.esploader.chip) {
-                    // 执行软重置让设备退出下载模式（如果支持）
                     if (typeof this.esploader.chip.softReset === 'function') {
                         try {
                             await this.esploader.chip.softReset();
@@ -1178,8 +1184,6 @@ class ModernESPLaunchpad {
                             this.addConsoleMessage('软重置失败，将尝试硬重置', 'warning');
                         }
                     }
-                    
-                    // 执行硬重置确保设备完全重启
                     if (typeof this.esploader.hardReset === 'function') {
                         await this.esploader.hardReset();
                         this.addConsoleMessage('设备已重置，正在启动新固件...', 'success');
@@ -1192,24 +1196,20 @@ class ModernESPLaunchpad {
                 }
             } catch (resetError) {
                 console.warn('自动重置失败:', resetError);
-                this.addConsoleMessage('自动重置失败，请手动重置设备', 'warning');
+                this.addConsoleMessage('烧录完成，请断开USB连接', 'warning');
             }
-            
             this.updateProgress('烧录完成', 100);
             
-            // 显示成功模态框
-            const successModal = new bootstrap.Modal(document.getElementById('successModal'));
-            successModal.show();
+            // 烧录完成后，恢复连接提示卡片，隐藏进度卡片
+            //if (this.statusAlert) this.statusAlert.style.display = '';
+            //if (this.progressCard) this.progressCard.style.display = 'none';
 
         } catch (error) {
             this.addConsoleMessage(`烧录失败: ${error.message}`, 'error');
             console.error('Flash error:', error);
-            
-            // 显示错误模态框
-            document.getElementById('errorMessage').textContent = error.message;
-            const errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
-            errorModal.show();
-            
+            // 烧录失败也恢复连接提示卡片，隐藏进度卡片
+            if (this.statusAlert) this.statusAlert.style.display = '';
+            if (this.progressCard) this.progressCard.style.display = 'none';
         } finally {
             this.isFlashing = false;
             this.flashButton.disabled = false;
