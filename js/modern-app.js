@@ -1204,12 +1204,18 @@ class ModernESPLaunchpad {
             //if (this.statusAlert) this.statusAlert.style.display = '';
             //if (this.progressCard) this.progressCard.style.display = 'none';
 
+            // 显示成功模态框
+            //this.showSuccessModal();
+
         } catch (error) {
             this.addConsoleMessage(`烧录失败: ${error.message}`, 'error');
             console.error('Flash error:', error);
             // 烧录失败也恢复连接提示卡片，隐藏进度卡片
             if (this.statusAlert) this.statusAlert.style.display = '';
             if (this.progressCard) this.progressCard.style.display = 'none';
+            
+            // 显示错误模态框
+            //this.showErrorModal(error.message);
         } finally {
             this.isFlashing = false;
             this.flashButton.disabled = false;
@@ -1664,6 +1670,72 @@ class ModernESPLaunchpad {
             setTimeout(() => {
                 this.consoleOutput.scrollTop = this.consoleOutput.scrollHeight;
             }, 10);
+        }
+    }
+
+    // 显示成功模态框
+    showSuccessModal(message = '固件烧录已成功完成！') {
+        try {
+            const successModal = document.getElementById('successModal');
+            if (successModal) {
+                // 更新模态框内容（如果需要自定义消息）
+                const modalBody = successModal.querySelector('.modal-body .success-content p.lead');
+                if (modalBody) {
+                    modalBody.textContent = message;
+                }
+                
+                const modal = new bootstrap.Modal(successModal);
+                modal.show();
+                
+                // 隐藏进度卡片，恢复状态提示
+                if (this.progressCard) this.progressCard.style.display = 'none';
+                if (this.statusAlert) this.statusAlert.style.display = '';
+                
+                this.addConsoleMessage('成功模态框已显示', 'info');
+            } else {
+                console.error('未找到成功模态框元素');
+                this.addConsoleMessage('无法显示成功提示', 'warning');
+            }
+        } catch (error) {
+            console.error('显示成功模态框失败:', error);
+            this.addConsoleMessage('显示成功提示失败', 'error');
+        }
+    }
+
+    // 显示错误模态框
+    showErrorModal(errorMessage = '发生未知错误') {
+        try {
+            const errorModal = document.getElementById('errorModal');
+            if (errorModal) {
+                // 更新错误消息
+                const errorMessageElement = document.getElementById('errorMessage');
+                if (errorMessageElement) {
+                    errorMessageElement.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            ${errorMessage}
+                        </div>
+                        <p class="text-muted mt-3">请检查：</p>
+                        <ul class="text-muted">
+                            <li>设备连接是否正常</li>
+                            <li>固件文件是否正确</li>
+                            <li>Flash地址是否有效</li>
+                            <li>设备是否进入下载模式</li>
+                        </ul>
+                    `;
+                }
+                
+                const modal = new bootstrap.Modal(errorModal);
+                modal.show();
+                
+                this.addConsoleMessage('错误模态框已显示', 'info');
+            } else {
+                console.error('未找到错误模态框元素');
+                this.addConsoleMessage('无法显示错误提示', 'warning');
+            }
+        } catch (error) {
+            console.error('显示错误模态框失败:', error);
+            this.addConsoleMessage('显示错误提示失败', 'error');
         }
     }
 }
